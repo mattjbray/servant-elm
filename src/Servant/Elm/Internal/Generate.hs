@@ -6,7 +6,7 @@ module Servant.Elm.Internal.Generate where
 import           Prelude                      hiding ((<$>))
 import           Control.Lens                 (to, (^.))
 import           Data.List                    (nub)
-import           Data.Maybe                   (catMaybes)
+import           Data.Maybe                   (catMaybes, mapMaybe)
 import           Data.Proxy                   (Proxy)
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
@@ -178,10 +178,8 @@ mkTypeSignature :: ElmOptions -> F.Req ElmDatatype -> Doc
 mkTypeSignature opts request =
   (hsep . punctuate " ->" . concat)
     [ catMaybes [urlPrefixType]
-    , headerTypes
-    , urlCaptureTypes
-    , queryTypes
-    , catMaybes [bodyType, returnType]
+    , mapMaybe (fmap elmTypeRef . reqPartToElmDatatype) (request ^. F.reqParts)
+    , catMaybes [returnType]
     ]
   where
     urlPrefixType :: Maybe Doc
@@ -190,39 +188,27 @@ mkTypeSignature opts request =
           Dynamic -> Just "String"
           Static _ -> Nothing
 
+    reqPartToElmDatatype :: F.ReqPart ElmDatatype -> Maybe ElmDatatype
+    reqPartToElmDatatype (F.ReqSegment (F.Segment (F.Static _))) = Nothing
+    reqPartToElmDatatype (F.ReqSegment (F.Segment (F.Cap capture))) =
+      Just $ capture ^. F.argType
+    reqPartToElmDatatype (F.ReqQueryArg queryArg) =
+      let wrapper =
+            case queryArg ^. F.queryArgType of
+              F.Normal ->
+                Elm.ElmPrimitive . Elm.EMaybe
+              _ ->
+                id
+      in
+        Just $ queryArg ^. F.queryArgName . F.argType . to wrapper
+    reqPartToElmDatatype (F.ReqHeaderArg headerArg) =
+      Just $ headerArg ^. F.headerArg . F.argType
+    reqPartToElmDatatype (F.ReqBody body) = Just body
+
+
     elmTypeRef :: ElmDatatype -> Doc
     elmTypeRef eType =
       stext (Elm.toElmTypeRefWith (elmExportOptions opts) eType)
-
-    headerTypes :: [Doc]
-    headerTypes =
-      [ header ^. F.headerArg . F.argType . to elmTypeRef
-      | header <- request ^. F.reqHeaders
-      ]
-
-    urlCaptureTypes :: [Doc]
-    urlCaptureTypes =
-        [ F.captureArg capture ^. F.argType . to elmTypeRef
-        | capture <- request ^. F.reqUrl . F.path
-        , F.isCapture capture
-        ]
-
-    queryTypes :: [Doc]
-    queryTypes =
-      [ arg ^. F.queryArgName . F.argType . to (elmTypeRef . wrapper)
-      | arg <- request ^. F.reqUrl . F.queryStr
-      , wrapper <- [
-          case arg ^. F.queryArgType of
-            F.Normal ->
-              Elm.ElmPrimitive . Elm.EMaybe
-            _ ->
-              id
-          ]
-      ]
-
-    bodyType :: Maybe Doc
-    bodyType =
-        fmap elmTypeRef $ request ^. F.reqBody
 
     returnType :: Maybe Doc
     returnType = do
@@ -236,10 +222,10 @@ elmHeaderArg header =
   header ^. F.headerArg . F.argName . to (stext . T.replace "-" "_" . F.unPathSegment)
 
 
-elmCaptureArg :: F.Segment ElmDatatype -> Doc
-elmCaptureArg segment =
+elmCaptureArg :: F.Arg ElmDatatype -> Doc
+elmCaptureArg arg =
   "capture_" <>
-  F.captureArg segment ^. F.argName . to (stext . F.unPathSegment)
+  arg ^. F.argName . to (stext . F.unPathSegment)
 
 
 elmQueryArg :: F.QueryArg ElmDatatype -> Doc
@@ -263,22 +249,15 @@ mkArgs opts request =
       case urlPrefix opts of
         Dynamic -> ["urlBase"]
         Static _ -> []
-    , -- Headers
-      [ elmHeaderArg header
-      | header <- request ^. F.reqHeaders
-      ]
-    , -- URL Captures
-      [ elmCaptureArg segment
-      | segment <- request ^. F.reqUrl . F.path
-      , F.isCapture segment
-      ]
-    , -- Query params
-      [ elmQueryArg arg
-      | arg <- request ^. F.reqUrl . F.queryStr
-      ]
-    , -- Request body
-      maybe [] (const [elmBodyArg]) (request ^. F.reqBody)
+    , mapMaybe reqPartToElmArg (request ^. F.reqParts)
     ]
+  where
+    reqPartToElmArg :: F.ReqPart ElmDatatype -> Maybe Doc
+    reqPartToElmArg (F.ReqSegment (F.Segment (F.Static _))) = Nothing
+    reqPartToElmArg (F.ReqSegment (F.Segment (F.Cap capture))) = Just $ elmCaptureArg capture
+    reqPartToElmArg (F.ReqQueryArg queryArg) = Just $ elmQueryArg queryArg
+    reqPartToElmArg (F.ReqHeaderArg headerArg) = Just $ elmHeaderArg headerArg
+    reqPartToElmArg (F.ReqBody _) = Just $ elmBodyArg
 
 
 mkLetParams :: ElmOptions -> F.Req ElmDatatype -> Maybe Doc
@@ -423,7 +402,7 @@ mkUrl opts segments =
               else
                 " |> toString"
           in
-            (elmCaptureArg s) <> toStringSrc <> " |> Http.encodeUri"
+            (elmCaptureArg arg) <> toStringSrc <> " |> Http.encodeUri"
 
 
 mkQueryParams

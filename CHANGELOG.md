@@ -1,3 +1,7 @@
+0.4.0.2
+-------
+* Generate argument lists in the order defined by the API type. (#34)
+
 0.4.0.1
 -------
 * Remove hyphens from generated function names. (servant-foreign-0.10 no longer
