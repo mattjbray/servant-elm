@@ -3,7 +3,7 @@ module PostBooksSource exposing (..)
 import Http
 
 
-postBooks : Book -> Http.Request (NoContent)
+postBooks : Book -> Http.Request (Http.Response (NoContent))
 postBooks body =
     Http.request
         { method =
@@ -19,9 +19,9 @@ postBooks body =
             Http.jsonBody (encodeBook body)
         , expect =
             Http.expectStringResponse
-                (\{ body } ->
-                    if String.isEmpty body then
-                        Ok NoContent
+                (\response ->
+                    if String.isEmpty response.body then
+                        Ok { response | body = NoContent }
                     else
                         Err "Expected the response body to be empty"
                 )

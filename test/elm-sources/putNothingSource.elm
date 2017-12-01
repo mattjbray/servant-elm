@@ -3,7 +3,7 @@ module PutNothingSource exposing (..)
 import Http
 
 
-putNothing : Http.Request (())
+putNothing : Http.Request (Http.Response (()))
 putNothing =
     Http.request
         { method =
@@ -19,9 +19,9 @@ putNothing =
             Http.emptyBody
         , expect =
             Http.expectStringResponse
-                (\{ body } ->
-                    if String.isEmpty body then
-                        Ok ()
+                (\response ->
+                    if String.isEmpty response.body then
+                        Ok { response | body = () }
                     else
                         Err "Expected the response body to be empty"
                 )

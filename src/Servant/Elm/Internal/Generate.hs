@@ -227,7 +227,7 @@ mkTypeSignature opts request =
     returnType :: Maybe Doc
     returnType = do
       result <- fmap elmTypeRef $ request ^. F.reqReturnType
-      pure ("Http.Request" <+> parens result)
+      pure ("Http.Request" <+> parens ("Http.Response" <+> parens result))
 
 
 elmHeaderArg :: F.HeaderArg ElmDatatype -> Doc
@@ -385,15 +385,19 @@ mkRequest opts request =
                 Elm.toElmTypeRefWith (elmExportOptions opts) elmTypeExpr
           in
             "Http.expectStringResponse" <$>
-            indent i (parens (backslash <> braces " body " <+> "->" <$>
-                              indent i ("if String.isEmpty body then" <$>
-                                        indent i "Ok" <+> stext elmConstructor <$>
+            indent i (parens (backslash <> "response" <+> "->" <$>
+                              indent i ("if String.isEmpty response.body then" <$>
+                                        indent i "Ok" <+> braces (" response" <+> "|" <+> "body" <+> "=" <+> stext elmConstructor <> " ") <$>
                                         "else" <$>
                                         indent i ("Err" <+> dquotes "Expected the response body to be empty")) <> line))
 
 
         Just elmTypeExpr ->
-          "Http.expectJson" <+> stext (Elm.toElmDecoderRefWith (elmExportOptions opts) elmTypeExpr)
+          "Http.expectStringResponse" <$>
+          indent i (parens (backslash <> "response" <+> "->" <$>
+                            indent i ("Result.map" <$>
+                                      indent i (parens (backslash <> "body" <+> "->" <+> braces (" response" <+> "|" <+> "body" <+> "=" <+> "body "))) <$>
+                                      indent i (parens ("decodeString" <+> stext (Elm.toElmDecoderRefWith (elmExportOptions opts) elmTypeExpr) <+> "response.body")))))
 
         Nothing ->
           error "mkHttpRequest: no reqReturnType?"

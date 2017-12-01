@@ -4,7 +4,7 @@ import Http
 import Json.Decode exposing (..)
 
 
-getWitharesponseheader : Http.Request (String)
+getWitharesponseheader : Http.Request (Http.Response (String))
 getWitharesponseheader =
     Http.request
         { method =
@@ -19,7 +19,11 @@ getWitharesponseheader =
         , body =
             Http.emptyBody
         , expect =
-            Http.expectJson string
+            Http.expectStringResponse
+                (\response ->
+                    Result.map
+                        (\body -> { response | body = body })
+                        (decodeString string response.body))
         , timeout =
             Nothing
         , withCredentials =

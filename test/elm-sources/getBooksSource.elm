@@ -4,7 +4,7 @@ import Http
 import Json.Decode exposing (..)
 
 
-getBooks : Bool -> Maybe (String) -> Maybe (Int) -> List (Maybe (Bool)) -> Http.Request (List (Book))
+getBooks : Bool -> Maybe (String) -> Maybe (Int) -> List (Maybe (Bool)) -> Http.Request (Http.Response (List (Book)))
 getBooks query_published query_sort query_year query_filters =
     let
         params =
@@ -41,7 +41,11 @@ getBooks query_published query_sort query_year query_filters =
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson (list decodeBook)
+                Http.expectStringResponse
+                    (\response ->
+                        Result.map
+                            (\body -> { response | body = body })
+                            (decodeString (list decodeBook) response.body))
             , timeout =
                 Nothing
             , withCredentials =
